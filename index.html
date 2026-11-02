@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pothole Detection</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1d232b; --muted: #6a7480;
+    --line: #dfe3e8; --accent: #e8590c; --accent-dark: #c44a08; --ok: #2b8a3e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171b; --card: #1d2228; --text: #e8ebef; --muted: #98a2ae;
+            --line: #2f3740; --accent: #ff7a2e; --accent-dark: #ff9455; --ok: #51cf66; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--text); line-height: 1.5; }
+  header { padding: 28px 20px 8px; text-align: center; }
+  h1 { margin: 0 0 4px; font-size: 1.7rem; }
+  header p { margin: 0; color: var(--muted); }
+  main { max-width: 1000px; margin: 0 auto; padding: 20px; display: grid; gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  #drop { border: 2px dashed var(--line); border-radius: 12px; padding: 38px 16px; text-align: center;
+          cursor: pointer; transition: border-color .15s, background .15s; }
+  #drop.over, #drop:hover { border-color: var(--accent); background: rgba(232,89,12,.06); }
+  #drop strong { color: var(--accent); }
+  #drop small { display: block; color: var(--muted); margin-top: 6px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 16px; }
+  .controls label { font-size: .92rem; color: var(--muted); }
+  .controls input[type=range] { width: 200px; vertical-align: middle; accent-color: var(--accent); }
+  .controls select { font: inherit; margin-left: 6px; padding: 6px 8px; border: 1px solid var(--line);
+                     border-radius: 6px; background: var(--card); color: var(--text); }
+  #confVal { display: inline-block; min-width: 2.6em; color: var(--text); font-weight: 600; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 10px 20px; cursor: pointer;
+           background: var(--accent); color: #fff; font-weight: 600; }
+  button:hover:not(:disabled) { background: var(--accent-dark); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button.secondary:hover:not(:disabled) { background: var(--bg); }
+  .spacer { flex: 1; }
+  .images { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .images { grid-template-columns: 1fr; } }
+  figure { margin: 0; }
+  figcaption { font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+  img.preview { width: 100%; border-radius: 8px; border: 1px solid var(--line); background: var(--bg);
+                display: block; min-height: 120px; object-fit: contain; }
+  .placeholder { display: grid; place-items: center; min-height: 160px; color: var(--muted);
+                 border: 1px dashed var(--line); border-radius: 8px; font-size: .9rem; }
+  .summary { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 12px; }
+  .stat b { display: block; font-size: 1.5rem; }
+  .stat span { color: var(--muted); font-size: .85rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; min-width: 70px; }
+  .bar > i { display: block; height: 100%; background: var(--ok); }
+  #msg { padding: 12px 14px; border-radius: 8px; font-size: .92rem; }
+  #msg.error { background: rgba(224,49,49,.12); color: #e03131; border: 1px solid rgba(224,49,49,.35); }
+  #msg.warn { background: rgba(245,159,0,.12); color: #e67700; border: 1px solid rgba(245,159,0,.35); }
+  .hidden { display: none !important; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4);
+             border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite;
+             vertical-align: -2px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pothole Detection</h1>
+  <p>Upload a road image and choose whether to show potholes only or all detected classes.</p>
+</header>
+
+<main>
+  <div id="msg" class="hidden"></div>
+
+  <section class="card">
+    <div id="drop" tabindex="0" role="button" aria-label="Choose an image">
+      <div><strong>Click to choose</strong> or drag &amp; drop an image here</div>
+      <small id="fileName">JPG, PNG, WEBP or BMP, up to 15 MB</small>
+    </div>
+    <input id="file" type="file" accept="image/*" class="hidden">
+
+    <div class="controls">
+      <label for="mode">Show
+        <select id="mode">
+          <option value="potholes">Potholes only</option>
+          <option value="all">All classes</option>
+        </select>
+      </label>
+      <label>Confidence threshold
+        <input id="conf" type="range" min="0.05" max="0.95" step="0.05" value="0.25">
+        <span id="confVal">0.25</span>
+      </label>
+      <span class="spacer"></span>
+      <button id="clear" class="secondary" disabled>Clear</button>
+      <button id="run" disabled>Detect potholes</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="images">
+      <figure>
+        <figcaption>Original</figcaption>
+        <img id="orig" class="preview hidden" alt="Original image">
+        <div id="origPh" class="placeholder">No image selected</div>
+      </figure>
+      <figure>
+        <figcaption>Detection result</figcaption>
+        <img id="result" class="preview hidden" alt="Detection result">
+        <div id="resultPh" class="placeholder">Result will appear here</div>
+      </figure>
+    </div>
+  </section>
+
+  <section id="report" class="card hidden">
+    <div class="summary">
+      <div class="stat"><b id="count">0</b><span id="countLabel">potholes detected</span></div>
+      <div class="stat"><b id="time">0 ms</b><span>inference time</span></div>
+      <span class="spacer"></span>
+      <button id="download" class="secondary">Download result</button>
+    </div>
+    <div id="tableWrap">
+      <table>
+        <thead><tr><th>#</th><th>Class</th><th>Confidence</th><th></th><th>Box (x1, y1, x2, y2)</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p id="none" class="hidden" style="color:var(--muted);margin:0">
+      No potholes found at this threshold. Try lowering the confidence slider.
+    </p>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const drop = $("drop"), fileInput = $("file"), runBtn = $("run"), clearBtn = $("clear");
+let selected = null, resultUrl = null;
+
+function showMsg(text, kind = "error") {
+  const m = $("msg"); m.textContent = text; m.className = kind;
+}
+function hideMsg() { $("msg").className = "hidden"; }
+
+function setFile(file) {
+  hideMsg();
+  if (!file) return;
+  if (!file.type.startsWith("image/")) return showMsg("Please choose an image file.");
+  if (file.size > 15 * 1024 * 1024) return showMsg("Image is too large (max 15 MB).");
+  selected = file;
+  $("fileName").textContent = file.name;
+  const url = URL.createObjectURL(file);
+  $("orig").src = url; $("orig").classList.remove("hidden"); $("origPh").classList.add("hidden");
+  resetResult();
+  runBtn.disabled = false; clearBtn.disabled = false;
+}
+
+function resetResult() {
+  $("result").classList.add("hidden"); $("resultPh").classList.remove("hidden");
+  $("report").classList.add("hidden"); resultUrl = null;
+}
+
+function clearAll() {
+  selected = null; fileInput.value = "";
+  $("fileName").textContent = "JPG, PNG, WEBP or BMP, up to 15 MB";
+  $("orig").classList.add("hidden"); $("origPh").classList.remove("hidden");
+  resetResult(); hideMsg();
+  runBtn.disabled = true; clearBtn.disabled = true;
+}
+
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } });
+fileInput.addEventListener("change", () => setFile(fileInput.files[0]));
+["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => setFile(e.dataTransfer.files[0]));
+$("conf").addEventListener("input", (e) => { $("confVal").textContent = Number(e.target.value).toFixed(2); });
+$("mode").addEventListener("change", resetResult);
+clearBtn.addEventListener("click", clearAll);
+
+runBtn.addEventListener("click", async () => {
+  if (!selected) return;
+  hideMsg();
+  runBtn.disabled = true;
+  runBtn.innerHTML = '<span class="spinner"></span>Detecting...';
+  const form = new FormData();
+  form.append("image", selected);
+  form.append("conf", $("conf").value);
+  form.append("mode", $("mode").value);
+  try {
+    const res = await fetch("/api/detect", { method: "POST", body: form });
+    const body = await res.text();
+    let data;
+    try {
+      data = JSON.parse(body);
+    } catch {
+      throw new Error(`Server returned a non-JSON response (HTTP ${res.status}). Restart app.py and check its terminal for the error.`);
+    }
+    if (!res.ok) throw new Error(data.error || "Detection failed.");
+    render(data);
+  } catch (err) {
+    showMsg(err.message);
+  } finally {
+    runBtn.disabled = false; runBtn.textContent = "Detect potholes";
+  }
+});
+
+function render(data) {
+  resultUrl = data.image;
+  $("result").src = data.image;
+  $("result").classList.remove("hidden"); $("resultPh").classList.add("hidden");
+  $("count").textContent = data.count;
+  const potholesOnly = $("mode").value === "potholes";
+  $("countLabel").textContent = potholesOnly ? "potholes detected" : "objects detected";
+  $("time").textContent = data.inference_ms + " ms";
+  const rows = $("rows"); rows.innerHTML = "";
+  data.detections.forEach((d, i) => {
+    const tr = document.createElement("tr");
+    const pct = Math.round(d.confidence * 100);
+    const cells = [i + 1, d.label, pct + "%"];
+    cells.forEach((v) => { const td = document.createElement("td"); td.textContent = v; tr.appendChild(td); });
+    const barTd = document.createElement("td");
+    barTd.innerHTML = '<div class="bar"><i style="width:' + pct + '%"></i></div>';
+    tr.appendChild(barTd);
+    const boxTd = document.createElement("td"); boxTd.textContent = d.box.join(", "); tr.appendChild(boxTd);
+    rows.appendChild(tr);
+  });
+  const none = data.count === 0;
+  $("tableWrap").classList.toggle("hidden", none);
+  $("none").textContent = potholesOnly
+    ? "No potholes found at this threshold. Try lowering the confidence slider."
+    : "No objects found at this threshold. Try lowering the confidence slider.";
+  $("none").classList.toggle("hidden", !none);
+  $("report").classList.remove("hidden");
+}
+
+$("download").addEventListener("click", () => {
+  if (!resultUrl) return;
+  const a = document.createElement("a");
+  a.href = resultUrl;
+  a.download = (selected ? selected.name.replace(/\.[^.]+$/, "") : "result") + "_detected.jpg";
+  a.click();
+});
+
+fetch("/api/health").then((r) => r.json()).then((h) => {
+  if (!h.model_found) showMsg("Model file '" + h.model_path + "' not found. Put your trained weights next to app.py, then restart.", "warn");
+}).catch(() => {});
+</script>
+</body>
+</html>
