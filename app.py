@@ -5,6 +5,9 @@ import threading
 import time
 from pathlib import Path
 
+# Silence Ultralytics config write permission errors on constrained environments
+os.environ.setdefault("YOLO_CONFIG_DIR", "/tmp")
+
 import cv2
 import numpy as np
 from flask import Flask, jsonify, request, send_from_directory
@@ -52,13 +55,19 @@ def detect():
         return jsonify(error="No image uploaded."), 400
 
     try:
-        conf = float(request.form.get("conf", 0.25))
+        conf = float(request.form.get("conf", 0.15))
     except ValueError:
         return jsonify(error="Invalid confidence value."), 400
     conf = min(max(conf, 0.01), 0.99)
 
+    try:
+        imgsz = int(request.form.get("imgsz", 960))
+    except ValueError:
+        imgsz = 960
+    imgsz = min(max(imgsz, 320), 1920)
+
     mode = request.form.get("mode", "potholes")
-    if mode not in {"potholes", "all"}:
+    if mode not in {"potholes", "road_damage", "all"}:
         return jsonify(error="Invalid display mode."), 400
 
     data = np.frombuffer(file.read(), np.uint8)
@@ -69,15 +78,23 @@ def detect():
     try:
         model = get_model()
         start = time.perf_counter()
-        result = model.predict(img, conf=conf, verbose=False)[0]
+        result = model.predict(img, conf=conf, imgsz=imgsz, verbose=False)[0]
         elapsed_ms = round((time.perf_counter() - start) * 1000)
 
+        is_single_class = len(result.names) == 1
         if mode == "potholes":
-            pothole_indices = [
+            indices = [
                 i for i, box in enumerate(result.boxes)
-                if str(result.names[int(box.cls[0])]).strip().casefold() in {"pothole", "potholes"}
+                if is_single_class or str(result.names[int(box.cls[0])]).strip().casefold() in {"pothole", "potholes", "0"}
             ]
-            result.boxes = result.boxes[pothole_indices]
+            result.boxes = result.boxes[indices]
+        elif mode == "road_damage":
+            road_classes = {"pothole", "potholes", "construction_road", "sand_on_road", "garbage", "0"}
+            indices = [
+                i for i, box in enumerate(result.boxes)
+                if is_single_class or str(result.names[int(box.cls[0])]).strip().casefold() in road_classes
+            ]
+            result.boxes = result.boxes[indices]
 
         detections = []
         for box in result.boxes:
@@ -112,5 +129,20 @@ def too_large(_):
     return jsonify(error="Image is too large (max 15 MB)."), 413
 
 
+def find_available_port(preferred=5050):
+    import socket
+    for p in [preferred, 5050, 8080, 8000]:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", p))
+                return p
+            except OSError:
+                continue
+    return preferred
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
+    requested_port = int(os.environ.get("PORT", 5050))
+    port = find_available_port(requested_port)
+    print(f"\n🚀 Server running at: http://127.0.0.1:{port}\n")
+    app.run(host="127.0.0.1", port=port, debug=False)

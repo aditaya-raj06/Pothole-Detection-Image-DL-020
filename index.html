@@ -85,16 +85,27 @@
       <label for="mode">Show
         <select id="mode">
           <option value="potholes">Potholes only</option>
-          <option value="all">All classes</option>
+          <option value="road_damage">Road defects (Potholes + Construction)</option>
+          <option value="all">All classes (10 classes)</option>
         </select>
       </label>
       <label>Confidence threshold
-        <input id="conf" type="range" min="0.05" max="0.95" step="0.05" value="0.25">
-        <span id="confVal">0.25</span>
+        <input id="conf" type="range" min="0.01" max="0.95" step="0.01" value="0.15">
+        <span id="confVal">0.15</span>
+      </label>
+      <label for="imgsz">Resolution
+        <select id="imgsz">
+          <option value="640" selected>640px (Model native)</option>
+          <option value="960">960px (Higher res)</option>
+          <option value="1280">1280px (Fine detail)</option>
+        </select>
       </label>
       <span class="spacer"></span>
       <button id="clear" class="secondary" disabled>Clear</button>
       <button id="run" disabled>Detect potholes</button>
+    </div>
+    <div style="margin-top:12px;font-size:0.83rem;color:var(--muted);background:rgba(232,89,12,0.06);padding:8px 12px;border-radius:6px;border:1px solid rgba(232,89,12,0.2);">
+      💡 <b>Dedicated Pothole Detector:</b> Model is trained specifically on road potholes. Default confidence <b>0.15 - 0.25</b> works best.
     </div>
   </section>
 
@@ -187,6 +198,7 @@ runBtn.addEventListener("click", async () => {
   form.append("image", selected);
   form.append("conf", $("conf").value);
   form.append("mode", $("mode").value);
+  form.append("imgsz", $("imgsz").value);
   try {
     const res = await fetch("/api/detect", { method: "POST", body: form });
     const body = await res.text();
@@ -210,8 +222,10 @@ function render(data) {
   $("result").src = data.image;
   $("result").classList.remove("hidden"); $("resultPh").classList.add("hidden");
   $("count").textContent = data.count;
-  const potholesOnly = $("mode").value === "potholes";
-  $("countLabel").textContent = potholesOnly ? "potholes detected" : "objects detected";
+  const modeVal = $("mode").value;
+  $("countLabel").textContent = modeVal === "potholes"
+    ? "potholes detected"
+    : (modeVal === "road_damage" ? "road defects detected" : "objects detected");
   $("time").textContent = data.inference_ms + " ms";
   const rows = $("rows"); rows.innerHTML = "";
   data.detections.forEach((d, i) => {
@@ -227,8 +241,8 @@ function render(data) {
   });
   const none = data.count === 0;
   $("tableWrap").classList.toggle("hidden", none);
-  $("none").textContent = potholesOnly
-    ? "No potholes found at this threshold. Try lowering the confidence slider."
+  $("none").textContent = modeVal === "potholes"
+    ? "No potholes found at this threshold. Try lowering the confidence slider (e.g. 0.08 - 0.15) or switch to 'Road defects' / 'All classes'."
     : "No objects found at this threshold. Try lowering the confidence slider.";
   $("none").classList.toggle("hidden", !none);
   $("report").classList.remove("hidden");
